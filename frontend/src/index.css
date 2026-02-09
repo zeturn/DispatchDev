@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Watercolor theme — soft layered color washes, paper texture, NO shadows. */
+@layer base {
+  html, body, #root { height: 100%; }
+  body {
+    @apply bg-paper text-ink font-sans antialiased;
+    background-image:
+      radial-gradient(60rem 60rem at 8% -10%, rgba(155,196,224,0.18), transparent 60%),
+      radial-gradient(50rem 50rem at 100% 0%, rgba(238,163,175,0.14), transparent 55%),
+      radial-gradient(55rem 55rem at 50% 120%, rgba(174,201,160,0.16), transparent 60%);
+    background-attachment: fixed;
+  }
+  h1, h2, h3 { @apply font-display; }
+}
+
+@layer components {
+  .wc-card { @apply rounded-2xl border border-line bg-white/70 backdrop-blur p-5; }
+  .wc-panel { @apply rounded-2xl border border-line bg-white/60 backdrop-blur; }
+  .wc-btn { @apply inline-flex items-center justify-center gap-2 rounded-xl border border-line bg-white/80 px-4 py-2 text-sm font-medium text-ink transition hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed; }
+  .wc-btn-primary { @apply border-water-500 bg-water-500 text-white hover:bg-water-600; }
+  .wc-btn-danger { @apply border-rose-400 bg-rose-500 text-white hover:bg-rose-600; }
+  .wc-btn-ghost { @apply border-transparent bg-transparent hover:bg-black/5; }
+  .wc-input { @apply w-full rounded-xl border border-line bg-white/90 px-3 py-2 text-sm text-ink outline-none focus:border-water-400; }
+  .wc-label { @apply block text-xs font-semibold uppercase tracking-wide text-muted mb-1; }
+  .wc-badge { @apply inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold; }
+  .wc-table { @apply w-full border-collapse text-sm; }
+  .wc-table th { @apply border-b border-line bg-white/70 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted; }
+  .wc-table td { @apply border-b border-line px-3 py-2 align-middle; }
+  .wc-nav { @apply block rounded-xl px-3 py-2 text-sm font-medium text-muted hover:bg-white/70 hover:text-ink; }
+  .wc-nav-active { @apply bg-water-500 text-white hover:bg-water-600 hover:text-white; }
+}
