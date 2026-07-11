@@ -1,4 +1,4 @@
-# Go build outputs
+# ============ Go ============
 bin/
 *.exe
 *.exe~
@@ -8,29 +8,42 @@ bin/
 *.test
 *.out
 
-# Dependency directories
-vendor/
-node_modules/
+# ============ Python ============
+__pycache__/
+*.py[cod]
+*.egg-info/
+.Python
+.venv/
+venv/
 
-# Editor directories and files
+# ============ Node / Frontend ============
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# ============ Databases (local) ============
+*.db
+*.sqlite
+*.sqlite3
+data/
+
+# ============ Logs & temp ============
+*.log
+*.err
+logs/
+tmp/
+*.tmp
+
+# ============ Env / secrets ============
+.env
+.env.local
+.env.*.local
+
+# ============ Editor & OS ============
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
-
-# OS files
 .DS_Store
 Thumbs.db
-
-# Logs and temporary files
-*.log
-tmp/
-*.tmp
-
-# Environment and local data
-.env
-.env.local
-.env.*.local
-data/
-logs/
