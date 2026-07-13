@@ -131,24 +131,17 @@ def records_for(chunk_name: str, dataset_name: str) -> list[dict[str, Any]]:
     return list(response.get("data") or [])
 
 
-def date_value(value: Any) -> str:
-    return str(value or "")[:10]
-
-
 def build_payload(job: sqlite3.Row) -> tuple[dict[str, Any], int, list[dict[str, Any]]]:
     records = records_for(job["chunk_name"], job["dataset_name"])
-    today = datetime.now(timezone.utc).date().isoformat()
-    if job["kind"] == "news":
-        items = [record.get("data") or {} for record in records]
-        today_items = [item for item in items if date_value(item.get("published_at")) == today]
-        payload_items = today_items or items
-        payload = {"api_version": "v1", "kind": "news", "date": today, "generated_at": now_utc(), "items": payload_items}
-    else:
-        items = [record.get("data") or {} for record in records]
-        payload = {"api_version": "v1", "kind": "tdt", "date": today, "generated_at": now_utc(), "event_trees": items}
-        payload_items = items
-    payload["count"] = len(payload_items)
-    return payload, len(payload_items), records
+    items = [record.get("data") or {} for record in records]
+    payload = {
+        "api_version": "v1",
+        "kind": job["kind"],
+        "generated_at": now_utc(),
+        "records": items,
+        "count": len(items),
+    }
+    return payload, len(items), records
 
 
 def refresh_job(slug: str) -> dict[str, Any]:
@@ -271,7 +264,9 @@ class DispatchHandler(BaseHTTPRequestHandler):
                 body += "</ul></body></html>"
                 self.text(200, body, "text/html; charset=utf-8")
             elif parsed.path == "/dispatch/health":
-                self.json(200, {"status": "healthy", "service": "dispatch", "hashslip_db_found": Path(HASHSLIP_DB_PATH).exists(), "published_api_jobs": 2})
+                with closing(store()) as conn:
+                    count = int(conn.execute("SELECT COUNT(*) FROM published_jobs WHERE enabled = 1").fetchone()[0])
+                self.json(200, {"status": "healthy", "service": "dispatch", "hashslip_db_found": Path(HASHSLIP_DB_PATH).exists(), "published_api_jobs": count})
             elif parts == ["dispatch", "jobs"]:
                 with closing(store()) as conn:
                     jobs = [dict(row) for row in conn.execute("SELECT slug, title, chunk_name, dataset_name, kind, enabled, updated_at FROM published_jobs ORDER BY slug")]
