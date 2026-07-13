@@ -131,9 +131,20 @@ def records_for(chunk_name: str, dataset_name: str) -> list[dict[str, Any]]:
     return list(response.get("data") or [])
 
 
+def publication_record(record: dict[str, Any]) -> dict[str, Any]:
+    data = record.get("data") or {}
+    payload = data.get("payload") if isinstance(data, dict) else None
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError:
+            pass
+    return payload if isinstance(payload, dict) else (data if isinstance(data, dict) else {"value": data})
+
+
 def build_payload(job: sqlite3.Row) -> tuple[dict[str, Any], int, list[dict[str, Any]]]:
     records = records_for(job["chunk_name"], job["dataset_name"])
-    items = [record.get("data") or {} for record in records]
+    items = [publication_record(record) for record in records]
     payload = {
         "api_version": "v1",
         "kind": job["kind"],
