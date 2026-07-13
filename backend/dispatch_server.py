@@ -67,6 +67,16 @@ def initialize_store() -> None:
           payload TEXT NOT NULL, source_count INTEGER NOT NULL, created_at TEXT NOT NULL,
           UNIQUE(slug, version)
         );
+        CREATE TABLE IF NOT EXISTS mission_publications (
+          mission_id TEXT NOT NULL, slug TEXT NOT NULL, created_at TEXT NOT NULL,
+          PRIMARY KEY (mission_id, slug)
+        );
+        CREATE TABLE IF NOT EXISTS mission_data_records (
+          mission_id TEXT NOT NULL, slug TEXT NOT NULL, snapshot_version INTEGER NOT NULL,
+          chunk_id TEXT, dataset_id TEXT, stable_id TEXT NOT NULL, record_role TEXT NOT NULL,
+          recorded_at TEXT NOT NULL,
+          PRIMARY KEY (mission_id, slug, snapshot_version, stable_id, record_role)
+        );
         """)
         now = now_utc()
         conn.executemany(
@@ -78,6 +88,7 @@ def initialize_store() -> None:
                 ("tdt-today", "Today's TDT Event Tree", "moiip-news-tdt", "events.news.global", "tdt", now),
             ],
         )
+        conn.executemany("INSERT OR IGNORE INTO mission_publications (mission_id, slug, created_at) VALUES (?, ?, ?)", [("mission_moiip_rss_tdt_news", "news-today", now), ("mission_moiip_rss_tdt_news", "tdt-today", now)])
         conn.commit()
 
 
@@ -134,7 +145,7 @@ def date_value(value: Any) -> str:
     return str(value or "")[:10]
 
 
-def build_payload(job: sqlite3.Row) -> tuple[dict[str, Any], int]:
+def build_payload(job: sqlite3.Row) -> tuple[dict[str, Any], int, list[dict[str, Any]]]:
     records = records_for(job["chunk_name"], job["dataset_name"])
     today = datetime.now(timezone.utc).date().isoformat()
     if job["kind"] == "news":
@@ -147,7 +158,7 @@ def build_payload(job: sqlite3.Row) -> tuple[dict[str, Any], int]:
         payload = {"api_version": "v1", "kind": "tdt", "date": today, "generated_at": now_utc(), "event_trees": items}
         payload_items = items
     payload["count"] = len(payload_items)
-    return payload, len(payload_items)
+    return payload, len(payload_items), records
 
 
 def refresh_job(slug: str) -> dict[str, Any]:
@@ -155,11 +166,17 @@ def refresh_job(slug: str) -> dict[str, Any]:
         job = conn.execute("SELECT * FROM published_jobs WHERE slug = ? AND enabled = 1", (slug,)).fetchone()
         if not job:
             raise KeyError(slug)
-        payload, source_count = build_payload(job)
+        payload, source_count, source_records = build_payload(job)
         version = int(conn.execute("SELECT COALESCE(MAX(version), 0) + 1 FROM published_snapshots WHERE slug = ?", (slug,)).fetchone()[0])
         created_at = now_utc()
         conn.execute("INSERT INTO published_snapshots (slug, version, payload, source_count, created_at) VALUES (?, ?, ?, ?, ?)", (slug, version, json.dumps(payload, ensure_ascii=False), source_count, created_at))
         conn.execute("UPDATE published_jobs SET updated_at = ? WHERE slug = ?", (created_at, slug))
+        missions = conn.execute("SELECT mission_id FROM mission_publications WHERE slug = ?", (slug,)).fetchall()
+        for mission in missions:
+            for record in source_records:
+                stable_id = str(record.get("stable_id") or "")
+                if stable_id:
+                    conn.execute("INSERT OR IGNORE INTO mission_data_records (mission_id, slug, snapshot_version, chunk_id, dataset_id, stable_id, record_role, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (mission["mission_id"], slug, version, record.get("chunk_id"), record.get("dataset_id"), stable_id, "source", created_at))
         conn.commit()
     return {"slug": slug, "version": version, "source_count": source_count, "created_at": created_at}
 
@@ -267,6 +284,10 @@ class DispatchHandler(BaseHTTPRequestHandler):
                 with closing(store()) as conn:
                     jobs = [dict(row) for row in conn.execute("SELECT slug, title, chunk_name, dataset_name, kind, enabled, updated_at FROM published_jobs ORDER BY slug")]
                 self.json(200, {"jobs": jobs})
+            elif len(parts) == 4 and parts[:2] == ["dispatch", "missions"] and parts[3] == "records":
+                with closing(store()) as conn:
+                    records = [dict(row) for row in conn.execute("SELECT * FROM mission_data_records WHERE mission_id = ? ORDER BY snapshot_version DESC, recorded_at DESC", (parts[2],))]
+                self.json(200, {"mission_id": parts[2], "records": records})
             elif len(parts) == 4 and parts[:2] == ["dispatch", "jobs"] and parts[3] == "refresh":
                 if self.command != "POST":
                     self.json(405, {"error": "method_not_allowed"})
