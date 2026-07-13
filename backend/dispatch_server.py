@@ -79,16 +79,6 @@ def initialize_store() -> None:
         );
         """)
         now = now_utc()
-        conn.executemany(
-            """INSERT OR IGNORE INTO published_jobs
-               (slug, title, chunk_name, dataset_name, kind, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            [
-                ("news-today", "Today's News", "moiip-news-rss", "documents.news.global", "news", now),
-                ("tdt-today", "Today's TDT Event Tree", "moiip-news-tdt", "events.news.global", "tdt", now),
-            ],
-        )
-        conn.executemany("INSERT OR IGNORE INTO mission_publications (mission_id, slug, created_at) VALUES (?, ?, ?)", [("mission_moiip_rss_tdt_news", "news-today", now), ("mission_moiip_rss_tdt_news", "tdt-today", now)])
         conn.commit()
 
 
@@ -193,7 +183,9 @@ def latest_snapshot(slug: str) -> dict[str, Any]:
 
 def refresh_loop() -> None:
     while True:
-        for slug in ("news-today", "tdt-today"):
+        with closing(store()) as conn:
+            slugs = [row[0] for row in conn.execute("SELECT slug FROM published_jobs WHERE enabled = 1")]
+        for slug in slugs:
             try:
                 refresh_job(slug)
             except Exception:
@@ -293,10 +285,6 @@ class DispatchHandler(BaseHTTPRequestHandler):
                     self.json(405, {"error": "method_not_allowed"})
                     return
                 self.json(200, refresh_job(parts[2]))
-            elif parts == ["api", "v1", "news", "today"]:
-                self.json(200, latest_snapshot("news-today"), cache_control="public, max-age=60")
-            elif parts == ["api", "v1", "tdt", "today"]:
-                self.json(200, latest_snapshot("tdt-today"), cache_control="public, max-age=60")
             elif len(parts) == 4 and parts[:3] == ["api", "v1", "published"]:
                 self.json(200, latest_snapshot(parts[3]), cache_control="public, max-age=60")
             elif parts == ["dispatch", "artifacts"]:
@@ -330,6 +318,23 @@ class DispatchHandler(BaseHTTPRequestHandler):
             self.json(500, {"error": str(exc)})
 
     def do_POST(self) -> None:
+        parsed = urllib.parse.urlparse(self.path)
+        parts = [urllib.parse.unquote(p) for p in parsed.path.strip("/").split("/") if p]
+        if parts == ["dispatch", "publications"]:
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length).decode("utf-8"))
+                required = ("mission_id", "slug", "title", "chunk_name", "dataset_name", "kind")
+                missing = [key for key in required if not str(body.get(key) or "").strip()]
+                if missing: self.json(400, {"error": "missing_fields", "fields": missing}); return
+                now = now_utc()
+                with closing(store()) as conn:
+                    conn.execute("INSERT OR REPLACE INTO published_jobs (slug, title, chunk_name, dataset_name, kind, enabled, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?)", (body["slug"], body["title"], body["chunk_name"], body["dataset_name"], body["kind"], now))
+                    conn.execute("INSERT OR IGNORE INTO mission_publications (mission_id, slug, created_at) VALUES (?, ?, ?)", (body["mission_id"], body["slug"], now))
+                    conn.commit()
+                self.json(201, {"mission_id": body["mission_id"], "slug": body["slug"]})
+            except Exception as exc: self.json(400, {"error": str(exc)})
+            return
         self.do_GET()
 
     def log_message(self, fmt: str, *args: Any) -> None:
