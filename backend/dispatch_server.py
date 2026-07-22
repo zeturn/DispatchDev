@@ -216,14 +216,16 @@ def refresh_loop() -> None:
 def list_artifacts(mission_id: str = "") -> list[dict[str, Any]]:
     where = "WHERE mission_id = ?" if mission_id else ""
     args: tuple[Any, ...] = (mission_id,) if mission_id else ()
-    out = rows(
-        f"""SELECT id AS artifact_id, title, artifact_type, status, mission_id,
-                   created_at, published_at, format
-            FROM artifacts {where}
-            ORDER BY COALESCE(published_at, updated_at, created_at) DESC""",
-        args,
-    )
-    return out
+    try:
+        return rows(
+            f"""SELECT id AS artifact_id, title, artifact_type, status, mission_id,
+                       created_at, published_at, format
+                FROM artifacts {where}
+                ORDER BY COALESCE(published_at, updated_at, created_at) DESC""",
+            args,
+        )
+    except sqlite3.Error:
+        return []
 
 
 def artifact_detail(artifact_id: str) -> dict[str, Any]:
