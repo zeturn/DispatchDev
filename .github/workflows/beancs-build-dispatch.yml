@@ -1,0 +1,99 @@
+name: BeanCS Build dispatch
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Target BeanCS registry image reference
+        required: true
+      dockerfile_path:
+        description: Dockerfile path
+        required: false
+        default: Dockerfile
+      context:
+        description: Docker build context
+        required: false
+        default: .
+      build_args:
+        description: Docker build arguments as KEY=VALUE lines
+        required: false
+        default: ""
+
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      BEANCS_PROJECT: dispatch
+      BEANCS_IMAGE_BASE: registry.beancs.com/tenant-2/dispatch
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve image
+        id: meta
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            IMAGE="${{ inputs.image }}"
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            VERSION_TAG="$TAG"
+            VERSION_TAG="${VERSION_TAG#${BEANCS_PROJECT}-}"
+            VERSION_TAG="${VERSION_TAG#all-}"
+            IMAGE="${BEANCS_IMAGE_BASE}:${VERSION_TAG}"
+          else
+            IMAGE="${BEANCS_IMAGE_BASE}:beancs-${GITHUB_SHA::12}"
+          fi
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+      - name: Resolve build args
+        id: build_args
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            {
+              echo "value<<EOF"
+              printf '%s\n' "${{ inputs.build_args }}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            cat <<'EOF' >/tmp/beancs-build-args
+
+          EOF
+            {
+              echo "value<<EOF"
+              cat /tmp/beancs-build-args
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.BEANCS_REGISTRY_HOST }}
+          username: ${{ secrets.BEANCS_REGISTRY_USERNAME }}
+          password: ${{ secrets.BEANCS_REGISTRY_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ github.event_name == 'workflow_dispatch' && inputs.context || '.' }}
+          file: ${{ github.event_name == 'workflow_dispatch' && inputs.dockerfile_path || 'Dockerfile' }}
+          build-args: ${{ steps.build_args.outputs.value }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}
+      - name: Notify BeanCS
+        if: always() && github.event_name != 'workflow_dispatch'
+        env:
+          BEANCS_PROJECT: dispatch
+          BEANCS_WEBHOOK_URL: ${{ secrets.BEANCS_WEBHOOK_URL }}
+          BEANCS_WEBHOOK_SECRET: ${{ secrets.BEANCS_WEBHOOK_SECRET }}
+          BEANCS_STATUS: ${{ job.status }}
+          BEANCS_IMAGE: ${{ steps.meta.outputs.image }}
+        run: |
+          STATUS="failure"
+          if [ "$BEANCS_STATUS" = "success" ]; then STATUS="success"; fi
+          BODY=$(jq -nc --arg project "$BEANCS_PROJECT" --arg tag "$BEANCS_IMAGE" --arg commit "$GITHUB_SHA" --arg status "$STATUS" '{project:$project, tag:$tag, commit:$commit, status:$status}')
+          SIG="sha256=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$BEANCS_WEBHOOK_SECRET" -binary | xxd -p -c 256)"
+          curl -fsS -X POST "$BEANCS_WEBHOOK_URL" -H "Content-Type: application/json" -H "X-Hub-Signature-256: $SIG" --data "$BODY" || echo "BeanCS webhook notification failed; build result remains valid."
