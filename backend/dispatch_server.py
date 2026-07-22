@@ -20,14 +20,23 @@ HOST = os.environ.get("DISPATCH_HOST", "0.0.0.0")
 PORT = int(os.environ.get("DISPATCH_PORT", "8140"))
 HASHSLIP_BASE_URL = os.environ.get("DISPATCH_HASHSLIP_BASE_URL", "http://127.0.0.1:8106").rstrip("/")
 ATLAS_BASE_URL = os.environ.get("DISPATCH_ATLAS_BASE_URL", "http://127.0.0.1:8130").rstrip("/")
+ORION_BASE_URL = os.environ.get("DISPATCH_ORION_BASE_URL", "").rstrip("/")
 HASHSLIP_DB_PATH = os.environ.get("DISPATCH_HASHSLIP_DB_PATH", "/hashslip-data/hashslip_meta.db")
 STORE_PATH = os.environ.get("DISPATCH_STORE_PATH", "/data/dispatch.db")
 TOKEN_URL = os.environ.get("DISPATCH_BASALTPASS_TOKEN_URL", "").rstrip("/")
-CLIENT_ID = os.environ.get("DISPATCH_BASALTPASS_CLIENT_ID", "")
-CLIENT_SECRET = os.environ.get("DISPATCH_BASALTPASS_CLIENT_SECRET", "")
+CLIENT_ID = os.environ.get("DISPATCH_BASALTPASS_CLIENT_ID") or os.environ.get("BASALTPASS_CLIENT_ID", "")
+CLIENT_SECRET = os.environ.get("DISPATCH_BASALTPASS_CLIENT_SECRET") or os.environ.get("BASALTPASS_CLIENT_SECRET", "")
 REFRESH_INTERVAL = max(0, int(os.environ.get("DISPATCH_REFRESH_INTERVAL_SECONDS", "300")))
 _token: dict[str, Any] = {"access_token": "", "expires_at": 0.0}
 _token_lock = threading.Lock()
+
+if not TOKEN_URL:
+    basalt_base_url = (os.environ.get("DISPATCH_BASALTPASS_BASE_URL") or os.environ.get("BASALTPASS_BASE_URL") or "").rstrip("/")
+    if basalt_base_url:
+        TOKEN_URL = basalt_base_url
+        if not TOKEN_URL.endswith("/api/v1"):
+            TOKEN_URL += "/api/v1"
+        TOKEN_URL += "/oauth/token"
 
 
 def connect() -> sqlite3.Connection:

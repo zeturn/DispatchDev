@@ -1,0 +1,57 @@
+apiVersion: beancs.io/v1alpha1
+kind: Application
+metadata:
+  name: dispatch
+  displayName: Dispatch
+  description: Report, dashboard, and Agent API output layer for the Orion data network.
+spec:
+  type: single
+  repo:
+    provider: github
+    name: zeturn/DispatchDev
+    branch: main
+  namespace:
+    strategy: per-project
+  autoDeploy:
+    enabled: true
+    mode: all
+  components:
+    - name: backend
+      kind: service
+      projectName: dispatch
+      build:
+        context: .
+        dockerfile: Dockerfile
+      ports:
+        - name: http
+          port: 8140
+          protocol: http
+          exposure: public
+          domain: dispatch.beancs.com
+      healthCheck:
+        type: http
+        path: /dispatch/health
+        port: http
+        initialDelaySeconds: 10
+        periodSeconds: 20
+        timeoutSeconds: 5
+      basaltPass:
+        allowedOrigins:
+          - https://dispatch.beancs.com
+        scopes:
+          - hashslip.read
+      env:
+        DISPATCH_HASHSLIP_BASE_URL: http://hashslip-backend.app-hashslip.svc.cluster.local:8106
+        DISPATCH_ATLAS_BASE_URL: http://atlas.app-orion.svc.cluster.local:8130
+        DISPATCH_ORION_BASE_URL: http://orion.app-orion.svc.cluster.local:8120
+        DISPATCH_REFRESH_INTERVAL_SECONDS: "300"
+      volumes:
+        - name: dispatch-data
+          type: pvc
+          mountPath: /data
+          size: 1Gi
+      replicas: 1
+      watchPaths:
+        - backend/**
+        - Dockerfile
+        - .beancs/**
