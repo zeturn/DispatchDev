@@ -17,7 +17,14 @@ from typing import Any
 
 
 HOST = os.environ.get("DISPATCH_HOST", "0.0.0.0")
-PORT = int(os.environ.get("DISPATCH_PORT", "8140"))
+
+
+def env_int(name: str, default: int) -> int:
+    value = os.environ.get(name, "").strip()
+    return int(value) if value.isdigit() else default
+
+
+PORT = env_int("DISPATCH_PORT", 8140)
 HASHSLIP_BASE_URL = os.environ.get("DISPATCH_HASHSLIP_BASE_URL", "http://127.0.0.1:8106").rstrip("/")
 ATLAS_BASE_URL = os.environ.get("DISPATCH_ATLAS_BASE_URL", "http://127.0.0.1:8130").rstrip("/")
 ORION_BASE_URL = os.environ.get("DISPATCH_ORION_BASE_URL", "").rstrip("/")
